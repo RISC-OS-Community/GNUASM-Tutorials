@@ -1,0 +1,129 @@
+@   Title: Flash CapsLock
+@  Author: Paolo Fabio Zaino
+@  Pupose: GAS tutorial on RISC OS to help people learning
+@          how to code on RISC OS usign GNU ASM
+@
+@ License: Copyright by Paolo Fabio Zaino, all rights reserved
+@          distributed under CDDL v1.1
+
+.file   "FlashCapslock"
+
+.global _start
+
+@ Define the symbols for the SysCalls/SWIs we use on this code:
+.equ XOS_Byte,      0x20006
+.equ XOS_Write0,    0x20002
+.equ XOS_CallAfter, 0x2003b
+.equ XOS_Exit,      0x20011
+
+.text
+
+_start:                            @ +- Main program
+
+main_loop:                         @ +- Infinite Loop
+                                   @ |
+        ldr    r0, =state          @ |--- Load the state value
+        ldr    r1, [r0]            @ |  ---------------------------
+        neg    r1, r1              @ |--- Invert it
+        str    r1, [r0]            @ |--- Store new value back
+        cmp    r1, #1              @ |--- Check if it's 1 or -1
+        beq    p_tock              @ |    -> if it's 1 print tock
+        b      p_tick              @ |    -> otherwise print tick
+                                   @ |
+check_mloop:                       @ |
+        bl     toggle_cl           @ |--- Toggle CapsLock
+        bl     wait                @ |--- Wait ~1 second
+        bl     scan_kbd            @ |--- Scan Keyboard for pressed keys
+        b      main_loop           @ |--- Repeat the infinite loop
+                                   @ +-----------------------------
+
+p_tick:                            @ +- This subroutine just prints
+        ldr    r0, =tickmsg        @ |  tick on the console and then
+        swi    XOS_Write0          @ |  goto check_mloop
+        b      check_mloop         @ +-----------------------------
+
+p_tock:                            @ +- This subroutine just prints
+        ldr    r0, =tockmsg        @ |  tock on the console and then
+        swi    XOS_Write0          @ |  returns
+        b      check_mloop         @ +-----------------------------
+
+toggle_cl:                         @ +- This routing toggle the CapsLock
+        push   {r0-r2,lr}          @ |  LED.
+                                   @ |
+        mov    r0, #202            @ |--- Lets toggle CapsLock Status
+        mov    r1, #16             @ |  |
+        mov    r2, #255            @ |  |
+        swi    XOS_Byte            @ |  ---------------------------
+                                   @ |
+        mov    r0, #118            @ |--- Lets update the LED with the
+        swi    XOS_Byte            @ |  | new status
+                                   @ |  ---------------------------
+        pop    {r0-r2,lr}          @ |  All done, let's return
+        mov    pc, lr              @ +-----------------------------
+
+wait:                              @ +- This subroutine waits a
+        push   {r0-r2,lr}          @ |  second and then returns
+                                   @ |
+        ldr    r0, =timer_done     @ |--- Let's reset the timer state
+        mov    r1, #0              @ |  |
+        str    r1, [r0]            @ |  ---------------------------
+                                   @ |
+        ldr    r1, =timer          @ |--- Now let's set a OS_CallAfter
+        ldr    r0, [r1]            @ |  | To request RISC OS to call
+        adr    r1, wait_done       @ |  | wait_done for us
+        mov    r2, #0              @ |  |
+        swi    XOS_CallAfter       @ |  ------------------------------
+                                   @ |
+wait_loop:                         @ |--- Now let's wait for the event
+        ldr    r0, =timer_done     @ |  | to happen. It will set the
+        ldr    r1, [r0]            @ |  | timer state to 1, we'll see
+        cmp    r1, #1              @ |  | that happening and, if so,
+        bne    wait_loop           @ |  | we'll exit the loop
+                                   @ |  ------------------------------
+        pop    {r0-r2,lr}          @ |--- Ok, all done, lets return
+        mov    pc, lr              @ |  -------------------------------
+                                   @ |
+wait_done:                         @ |--- This routine is executed when
+        push   {r0-r12,lr}         @ |  | the CallAfter event happens
+                                   @ |  -------------------------------
+        ldr    r0, =timer_done     @ |--- Set timer_done to 1
+        mov    r1, #1              @ |  |
+        str    r1, [r0]            @ |  -------------------------------
+                                   @ |
+        pop    {r0-r12,lr}         @ |--- Restore registers and return.
+        mov    pc, lr              @ +-------------------------------
+
+scan_kbd:                          @ +- This subroutine scans
+        push   {r0-r2,lr}          @ |  for a pressed key (also
+                                   @ |  modifiers and mouse keys)
+        mov    r0, #121            @ |  and if one is pressed then
+        mov    r1, #0              @ |  it quits the entire program
+        swi    XOS_Byte            @ |  This is required because
+        cmp    r1, #0xFF           @ |  we are setting OS_CallAfter
+        bne    exit                @ |  and so we want to quit clean
+                                   @ |  (aka not while we wait for
+        pop    {r0-r2,lr}          @ |   OS_CallAfter timer to expire)
+        mov    pc, lr              @ +-----------------------------
+
+exit:                              @ +- User requested to exit
+        mov    r0, #0              @ |
+        swi    XOS_Exit            @ +----------------------------------
+
+.data
+        .align
+tickmsg:
+        .asciz "tick\n\r"          @ thick messasge
+        .align
+tockmsg:
+        .asciz "tock\n\r"          @ tock message
+        .align
+state:                             @ state variable
+        .word  0x00000001
+        .align
+timer:                             @ timer variable
+        .word  100
+        .align
+timer_done:                        @ timer state
+        .word  0x00000000
+        .align
+
