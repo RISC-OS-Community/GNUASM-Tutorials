@@ -1,0 +1,17 @@
+| Simple GNU ASM build script
+
+Dir <Obey$Dir>
+
+Set Debug$Build 0
+
+cdir @.o
+IfThere @.o.FlashCapsLock Then wipe @.O.* ~V~C F
+
+If "<Debug$Build>" = "0" Then as @.s.FlashCapsLock -o o.FlashCapsLock
+If "<Debug$Build>" = "1" Then as @.s.FlashCapsLock -o o.FlashCapsLock -g
+
+If "<Debug$Build>" = "0" Then ld @.o.FlashCapsLock -o @.FlashCapsLock -nostdlib --strip-all --discard-all
+If "<Debug$Build>" = "1" Then ld @.o.FlashCapsLock -o @.FlashCapsLock -nostdlib
+
+cdir @.o
+UnSet Debug$Build
